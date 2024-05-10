@@ -1,0 +1,5 @@
+bouncer:
+  addr: localhost:8080
+  storages:
+  - shard1:
+    addr: http://localhost:8181
