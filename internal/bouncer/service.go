@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"log/slog"
 	"sync"
 	"time"
@@ -47,8 +48,17 @@ func (b *ShardService) Set(ctx context.Context, key string, value []byte, ttl ti
 		ttl = b.defaultTTL
 	}
 
-	i, exist := b.getStorageIndex(key)
+	i, exist := b.isExist(key)
 	if exist && b.storages[i].IsAlive() {
+		s = b.storages[i]
+		err := s.Set(ctx, key, value, ttl)
+		if err == nil {
+			return nil
+		}
+	}
+
+	i = b.getShardIndByHash(key)
+	if b.storages[i].IsAlive() {
 		s = b.storages[i]
 		err := s.Set(ctx, key, value, ttl)
 		if err == nil {
@@ -79,7 +89,7 @@ func (b *ShardService) Set(ctx context.Context, key string, value []byte, ttl ti
 }
 
 func (b *ShardService) Delete(ctx context.Context, key string) error {
-	i, ok := b.getStorageIndex(key)
+	i, ok := b.isExist(key)
 	if !ok {
 		return ErrKeyNotExist
 	}
@@ -93,7 +103,7 @@ func (b *ShardService) Delete(ctx context.Context, key string) error {
 }
 
 func (b *ShardService) Get(ctx context.Context, key string) ([]byte, error) {
-	i, ok := b.getStorageIndex(key)
+	i, ok := b.isExist(key)
 	if !ok {
 		return nil, ErrKeyNotExist
 	}
@@ -106,7 +116,24 @@ func (b *ShardService) Get(ctx context.Context, key string) ([]byte, error) {
 	return s.Get(ctx, key)
 }
 
-func (b *ShardService) getStorageIndex(key string) (int, bool) {
+func (b *ShardService) getShardIndByHash(key string) int {
+	aliveShards := b.countAliveShards()
+	h := fnv.New64a()
+	h.Write([]byte(key))
+	return int(h.Sum64() % uint64(aliveShards))
+}
+
+func (b *ShardService) countAliveShards() int {
+	count := 0
+	for _, s := range b.storages {
+		if s.IsAlive() {
+			count++
+		}
+	}
+	return count
+}
+
+func (b *ShardService) isExist(key string) (int, bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	i, ok := b.index[key]
