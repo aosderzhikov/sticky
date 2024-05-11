@@ -97,6 +97,13 @@ You shoud see the output similar with this
 
 Cluster is ready. [Usage API](#api) 
 
+## Sharded Mode With Failover (Not Implemented Yet)
+
+Future impovment could include `failover` mode for `bouncer`. It will let to deploy two `bouncers`.
+It will make cluster more fault tolerance. Both `bouncers` will sync their indexes and keep them consistence.
+
+![scheme](image.png)
+
 ## API
 `Key` and `ttl`(1s, 10m, 500ms...) are passed like query parameters.
 
@@ -116,11 +123,7 @@ curl -X DELETE 'http://localhost:8181/delete?key=key1'
 ```
 
 # TODO
-tests
-load actual data on failed for balancer
-inmemory
-replica
-hash func
-round robin func
-swagger
-two bouncers
+ - tests for bouncer
+ - round robbin selection
+ - failover bouncers
+ - integration tests
