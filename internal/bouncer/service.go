@@ -23,8 +23,6 @@ type ShardService struct {
 
 	mu    sync.Mutex
 	index map[string]int
-
-	defaultTTL time.Duration
 }
 
 type Storage interface {
@@ -43,10 +41,6 @@ var (
 
 func (b *ShardService) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
 	var s Storage
-
-	if ttl == 0 {
-		ttl = b.defaultTTL
-	}
 
 	i, exist := b.isExist(key)
 	if exist && b.storages[i].IsAlive() {
@@ -102,7 +96,13 @@ func (b *ShardService) Delete(ctx context.Context, key string) error {
 		return fmt.Errorf("storage %q isnt alive", s.Addr())
 	}
 
-	return s.Delete(ctx, key)
+	err := s.Delete(ctx, key)
+	if err != nil {
+		return err
+	}
+
+	b.deletStorageIndex(key)
+	return nil
 }
 
 func (b *ShardService) Get(ctx context.Context, key string) ([]byte, error) {
@@ -116,7 +116,12 @@ func (b *ShardService) Get(ctx context.Context, key string) ([]byte, error) {
 		return nil, fmt.Errorf("storage %q isnt alive", s.Addr())
 	}
 
-	return s.Get(ctx, key)
+	value, err := s.Get(ctx, key)
+	if len(value) == 0 {
+		b.deletStorageIndex(key)
+		return nil, ErrKeyNotExist
+	}
+	return value, err
 }
 
 func (b *ShardService) getShardIndByHash(key string) int {
@@ -146,5 +151,11 @@ func (b *ShardService) isExist(key string) (int, bool) {
 func (b *ShardService) setStorageIndex(key string, i int) {
 	b.mu.Lock()
 	b.index[key] = i
+	b.mu.Unlock()
+}
+
+func (b *ShardService) deletStorageIndex(key string) {
+	b.mu.Lock()
+	delete(b.index, key)
 	b.mu.Unlock()
 }
