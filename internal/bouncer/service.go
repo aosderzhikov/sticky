@@ -50,25 +50,28 @@ func (b *ShardService) Set(ctx context.Context, key string, value []byte, ttl ti
 
 	i, exist := b.isExist(key)
 	if exist && b.storages[i].IsAlive() {
+		slog.Debug(fmt.Sprintf("key %q is exist, value will be updated", key))
 		s = b.storages[i]
 		err := s.Set(ctx, key, value, ttl)
 		if err == nil {
+			b.setStorageIndex(key, i)
 			return nil
 		}
+		slog.ErrorContext(ctx, fmt.Sprintf("update value by key %q failed: %v", key, err))
 	}
 
 	i = b.getShardIndByHash(key)
 	if b.storages[i].IsAlive() {
 		s = b.storages[i]
+		slog.Debug(fmt.Sprintf("selected by hash storage with index %d and addr %q is alive", i, s.Addr()))
 		err := s.Set(ctx, key, value, ttl)
 		if err == nil {
+			b.setStorageIndex(key, i)
 			return nil
 		}
+		slog.ErrorContext(ctx, fmt.Sprintf("store value by key %q failed: %v", key, err))
 	}
 
-	// TODO: this approach leaves unused values in unavailable shards
-	// if one shard is dead all updates will set in first shard
-	// think about round robin or hash func
 	for i := range b.storages {
 		s = b.storages[i]
 		if !s.IsAlive() {

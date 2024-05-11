@@ -1,8 +1,6 @@
-# sticky
-
 ## Description
 
-The storing service is pepresented with two components - `bouncer` and `keeper`.
+The storing service is pepresented with two components - `bouncer` and `keeper`. Both have the same [API](#api)
 
 ### Keeper
 
@@ -22,7 +20,7 @@ If detected storage unavailable, `bouncer` will try to put pair in first alive s
 
 
 ## Deployment
-### Standalone
+### Standalone Mode
 
 If you need just one instance of storage it enough to deploy only one `keeper`.
 
@@ -45,15 +43,75 @@ go build -o keeper  cmd/keeper/main.go
 ./keeper
 ```
 
-After it is avalaible for usage
+After it is avalaible for [usage](#api).
+
+
+## Sharded Mode
+
+If you need more scalable solution it possible to up a multiple keepers and interact with them by `bouncer`.
+
+At first deploy mutliple inctances of `keeper` like [describes here](#standalone-mode). Let's say it will be 3 instances on `localhost` on `8181`, `8182` and `8183` ports.
+
+After that it possible to configure and up `bouncer` via config file
+
+```yaml
+#config.yaml
+bouncer:
+  addr: localhost:8080
+  debugMode: true
+  storages:
+  - shard1:
+    addr: http://localhost:8181
+    healthCheckInterval: 5s
+
+  - shard2:
+    addr: http://localhost:8182
+    healthCheckInterval: 5s
+
+  - shard3:
+    addr: http://localhost:8183
+    healthCheckInterval: 10s
+```
+
+Now it possible to run `bouncer`
+
 ```sh
-## set value
+CONFIG_PATH=config.yaml go run cmd/bouncer/main.go
+```
+
+Or build it first
+```sh
+go build -o bouncer  cmd/bouncer/main.go
+
+CONFIG_PATH=config.yaml ./keeper
+```
+
+You shoud see the output similar with this
+```sh
+2024/05/11 15:09:11 DEBUG debug level is on
+2024/05/11 15:09:11 INFO health check status "http://localhost:8181/" is alive: true
+2024/05/11 15:09:11 INFO health check status "http://localhost:8182/" is alive: true
+2024/05/11 15:09:11 INFO health check status "http://localhost:8183/" is alive: true
+2024/05/11 15:09:11 INFO start bouncer on "localhost:8080"
+```
+
+Cluster is ready. [Usage API](#api) 
+
+## API
+`Key` and `ttl`(1s, 10m, 500ms...) are passed like query parameters.
+
+`Value` of entry is passed in request's body like plain text.
+
+Examples
+```sh
+# set value
+
 curl -X POST 'http://localhost:8181/set?key=key1&ttl=1m' -d 'storing_value' 
 
-## get value
+# get value
 curl 'http://localhost:8181/get?key=key1'
 
-## delete value 
+# delete value 
 curl -X DELETE 'http://localhost:8181/delete?key=key1'
 ```
 
@@ -65,3 +123,4 @@ replica
 hash func
 round robin func
 swagger
+two bouncers

@@ -1,5 +1,15 @@
 bouncer:
   addr: localhost:8080
+  debugMode: true
   storages:
   - shard1:
     addr: http://localhost:8181
+    healthCheckInterval: 5s
+
+  - shard2:
+    addr: http://localhost:8182
+    healthCheckInterval: 5s
+
+  - shard3:
+    addr: http://localhost:8183
+    healthCheckInterval: 10s

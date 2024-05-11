@@ -18,9 +18,9 @@ type Config struct {
 }
 
 type BouncerConfig struct {
-	Addr       string          `yaml:"addr"`
-	Storages   []StorageConfig `yaml:"storages"`
-	DefaultTTL time.Duration   `yaml:"defaultTtl" envDefault:"10s"`
+	DebugMode bool            `yaml:"debugMode"`
+	Addr      string          `yaml:"addr"`
+	Storages  []StorageConfig `yaml:"storages"`
 }
 
 type StorageConfig struct {
@@ -68,6 +68,11 @@ func main() {
 	if err = env.Parse(&cfg); err != nil {
 		slog.Error(err.Error())
 		return
+	}
+
+	if cfg.Bouncer.DebugMode {
+		slog.SetLogLoggerLevel(slog.LevelDebug)
+		slog.Debug("debug level is on")
 	}
 
 	storages := make([]bouncer.Storage, 0, len(cfg.Bouncer.Storages))
