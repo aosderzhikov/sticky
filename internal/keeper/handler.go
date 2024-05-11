@@ -1,10 +1,13 @@
+//go:generate mockgen -source=$GOFILE -destination=mock_test.go -package=$GOPACKAGE
 package keeper
 
 import (
+	"errors"
 	"io"
-	"log/slog"
 	"net/http"
 	"time"
+
+	"github.com/aosderzhikov/sticky/internal/handler"
 )
 
 func NewHandler(s Service) *Handler {
@@ -22,33 +25,46 @@ type Service interface {
 }
 
 func (h *Handler) GetHandle(w http.ResponseWriter, r *http.Request) {
-	query := r.URL.Query()
-	key := query.Get("key")
-	_, _ = w.Write(h.s.Get(key))
+	ctx := r.Context()
+
+	key, err := handler.ExtractKey(r)
+	if err != nil {
+		handler.ErrorHandle(ctx, w, err, http.StatusBadRequest)
+		return
+	}
+
+	value := h.s.Get(key)
+	_, _ = w.Write(value)
 }
 
 func (h *Handler) SetHandle(w http.ResponseWriter, r *http.Request) {
-	query := r.URL.Query()
-	key := query.Get("key")
+	ctx := r.Context()
 
-	ttlStr := query.Get("ttl")
-	ttl, err := time.ParseDuration(ttlStr)
+	key, ttl, err := handler.ExtractKeyAndTTL(r)
 	if err != nil {
-		slog.Error(err.Error())
+		handler.ErrorHandle(ctx, w, err, http.StatusBadRequest)
 		return
 	}
 
 	value, err := io.ReadAll(r.Body)
 	if err != nil {
-		slog.Error(err.Error())
+		err = errors.Join(handler.ErrBodyRead, err)
+		handler.ErrorHandle(ctx, w, err, http.StatusInternalServerError)
+		return
 	}
 
 	h.s.Set(key, value, ttl)
 }
 
-func (h *Handler) DeletHandle(w http.ResponseWriter, r *http.Request) {
-	query := r.URL.Query()
-	key := query.Get("key")
+func (h *Handler) DeleteHandle(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	key, err := handler.ExtractKey(r)
+	if err != nil {
+		handler.ErrorHandle(ctx, w, err, http.StatusBadRequest)
+		return
+	}
+
 	h.s.Delete(key)
 }
 

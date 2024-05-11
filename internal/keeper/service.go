@@ -1,79 +1,92 @@
 package keeper
 
 import (
+	"fmt"
 	"log/slog"
+	"maps"
 	"sync"
 	"time"
 )
 
-func NewService() *Keeper {
+func NewService(ttl time.Duration) *Keeper {
 	return &Keeper{
-		values:   make(map[string]value),
-		ttlQueue: make(map[string]<-chan time.Time),
+		values:     make(map[string]value),
+		defaultTTL: ttl,
 	}
 }
 
 type Keeper struct {
-	muV    sync.Mutex
-	values map[string]value
-
-	muT      sync.Mutex
-	ttlQueue map[string]<-chan time.Time
+	mu         sync.RWMutex
+	values     map[string]value
+	defaultTTL time.Duration
 }
 
 type value struct {
 	key  string
 	data []byte
-	ttl  time.Duration
+	ttl  *time.Timer
 }
 
 func (k *Keeper) Get(key string) []byte {
-	k.muV.Lock()
-	defer k.muV.Unlock()
-	return k.values[key].data
+	k.mu.RLock()
+	data := k.values[key].data
+	k.mu.RUnlock()
+	return data
 }
 
 func (k *Keeper) Set(key string, data []byte, ttl time.Duration) {
-	k.muV.Lock()
-	k.values[key] = value{key, data, ttl}
-	k.muV.Unlock()
+	k.mu.Lock()
+	if ttl == 0 {
+		ttl = k.defaultTTL
+	}
+	k.values[key] = value{key, data, time.NewTimer(ttl)}
+	k.mu.Unlock()
 
-	k.muT.Lock()
-	timer := time.NewTimer(ttl)
-	k.ttlQueue[key] = timer.C
-	k.muT.Unlock()
-	slog.Info("setted value: %v %v", k.values, k.ttlQueue)
+	slog.Debug(fmt.Sprintf("set key %q with ttl %s", key, ttl))
 }
 
 func (k *Keeper) Delete(key string) {
-	k.muV.Lock()
-	delete(k.values, key)
-	k.muV.Unlock()
+	k.mu.RLock()
+	val, ok := k.values[key]
+	k.mu.RUnlock()
+	if !ok {
+		return
+	}
 
-	k.muT.Lock()
-	delete(k.ttlQueue, key)
-	k.muT.Unlock()
+	val.ttl.Stop()
+	k.mu.Lock()
+	delete(k.values, key)
+	k.mu.Unlock()
+
+	slog.Debug(fmt.Sprintf("delete key %q", key))
 }
 
 func (k *Keeper) Run() {
 	go k.observeTTL()
 }
 
+// TODO: think about optimization
 func (k *Keeper) observeTTL() {
+	copied := make(map[string]value)
 	for {
-		for key := range k.ttlQueue {
-			k.muT.Lock()
-			ch, ok := k.ttlQueue[key]
+		k.mu.RLock()
+		maps.Copy(copied, k.values)
+		k.mu.RUnlock()
+
+		for key := range copied {
+			val, ok := copied[key]
 			if !ok {
 				continue
 			}
-			k.muT.Unlock()
 
 			select {
-			case <-ch:
+			case <-val.ttl.C:
+				slog.Debug(fmt.Sprintf("key %q expired", key))
 				k.Delete(key)
 			default:
 			}
 		}
+
+		copied = make(map[string]value)
 	}
 }
